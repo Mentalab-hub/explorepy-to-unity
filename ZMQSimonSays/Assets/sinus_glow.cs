@@ -4,6 +4,7 @@ using System.Threading;
 using AsyncIO;
 using NetMQ;
 using NetMQ.Sockets;
+using TMPro;
 using UnityEngine;
 
 public class zmq_handler
@@ -69,10 +70,15 @@ public class sinus_glow : MonoBehaviour
 
     public bool play_mode = false;
 
+    public GameObject statusText;
+    public GameObject winCanvas;
+
     public GameObject left;
     public GameObject right;
     public GameObject up;
     public GameObject down;
+
+    public GameObject indicator_lamp;
 
     private Dictionary<string, int> command_to_index;
 
@@ -81,6 +87,8 @@ public class sinus_glow : MonoBehaviour
     private Material up_mat;
     private Material down_mat;
 
+    private Material indicator_mat;
+
     private Material[] mat_list;
 
     private float animation_timestamp = 0.0f;
@@ -88,8 +96,8 @@ public class sinus_glow : MonoBehaviour
     private float last_message_requested_timestamp = 0.0f;
     private float wait_before_next_msg = 1.0f;
     private string last_message = null;
-
-    private int some_index = -1;
+    private bool handle_next = true;
+    private bool is_animating_win = false;
 
     private bool await_input = false;
     private int sequence_length = 3;
@@ -103,8 +111,6 @@ public class sinus_glow : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        //Debug.Log("Starting...");
-
         zmq_handler = new zmq_handler();
         zmq_handler.Start();
 
@@ -119,10 +125,14 @@ public class sinus_glow : MonoBehaviour
         up_mat = up.GetComponent<Renderer>().material;
         down_mat = down.GetComponent<Renderer>().material;
 
+        indicator_mat = indicator_lamp.GetComponent<Renderer>().material;
+
         left_mat.EnableKeyword("_EMISSION");
         right_mat.EnableKeyword("_EMISSION");
         up_mat.EnableKeyword("_EMISSION");
         down_mat.EnableKeyword("_EMISSION");
+
+        indicator_mat.EnableKeyword("_EMISSION");
 
         mat_list = new Material[4];
         mat_list[0] = left_mat;
@@ -140,16 +150,25 @@ public class sinus_glow : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        if (!play_mode)
+        if (is_animating_win)
         {
+            // Called when the player has successfully guessed a sequence
+            StartCoroutine(animate_win());
+        }
+        else if (!play_mode)
+        {
+            // Executed if messages should be handled from ZMQ and not from keyboard presses
             if (!await_input)
             {
+                // Play the initial sequence
                 play_sequence();
             }
             else
             {
+                // Look for input from ZMQ
                 if (last_message_requested_timestamp >= wait_before_next_msg && !isAnimating)
                 {
+                    // Wait until wait_before_next_msg has passed before requesting a new message from ZMQ
                     last_message_requested_timestamp = 0.0f;
                     last_message = zmq_handler.pop_last_message();
                     Debug.Log("Reading message from zmq_handler: " + last_message);
@@ -157,16 +176,23 @@ public class sinus_glow : MonoBehaviour
                 last_message_requested_timestamp += Time.deltaTime;
                 if (last_message != null)
                 {
+                    // Handle the message received from ZMQ
                     isAnimating = true;
+                    if (handle_next == true)
+                    {
+                        // Handle the message only once (until light-up animation has finished and enough time has passed)
+                        handle_incoming_msg(last_message);
+                        handle_next = false;
+                    }
+                    // light up the respective box over time
                     animate_child(mat_list[command_to_index[last_message]]);
-
                     if (animation_timestamp >= glow_length)
                     {
-                        handle_incoming_msg(last_message);
-
+                        // Reset values if animation has ended (played for glow_length time)
                         animation_timestamp = 0.0f;
                         isAnimating = false;
                         last_message = null;
+                        handle_next = true;
                     }
                 }
             }
@@ -185,10 +211,19 @@ public class sinus_glow : MonoBehaviour
         }
     }
 
+    IEnumerator animate_win()
+    {
+        winCanvas.SetActive(true);
+        yield return new WaitForSeconds(1.5f);
+        winCanvas.SetActive(false);
+        is_animating_win = false;
+    }
+
     private void play_sequence()
     {
         if (current_sequence == null)
         {
+            statusText.GetComponent<TextMeshProUGUI>().SetText("Playing sequence...");
             Debug.Log("Creating new sequence!");
             current_sequence = create_sequence(sequence_length, 4);
         }
@@ -207,6 +242,7 @@ public class sinus_glow : MonoBehaviour
                 sequence_pointer = 0;
                 await_input = true;
                 Debug.Log("Finished playing sequence, awaiting input...");
+                statusText.GetComponent<TextMeshProUGUI>().SetText("Awaiting user input...");
             }
         }
     }
@@ -215,6 +251,7 @@ public class sinus_glow : MonoBehaviour
     {
         if (current_sequence[sequence_pointer] == command_to_index[msg])
         {
+            indicator_mat.SetColor("_EmissionColor", Color.green*0.5f);
             Debug.Log("Got the right message " + msg + ", moving on!");
             sequence_pointer += 1;
             if (sequence_pointer >= current_sequence.Length)
@@ -222,10 +259,13 @@ public class sinus_glow : MonoBehaviour
                 sequence_pointer = 0;
                 current_sequence = null;
                 await_input = false;
+                indicator_mat.SetColor("_EmissionColor", Color.white*0.5f);
+                is_animating_win = true;
             }
         }
         else
         {
+            indicator_mat.SetColor("_EmissionColor", Color.red*0.5f);
             Debug.Log("Wrong msg! Got " + msg + ", expected " + current_sequence[sequence_pointer]);
         }
     }
@@ -237,6 +277,7 @@ public class sinus_glow : MonoBehaviour
             KeyCode current_keycode = keycode_indices[current_sequence[sequence_pointer]];
             if (Input.GetKeyDown(current_keycode))
             {
+                indicator_mat.SetColor("_EmissionColor", Color.green*0.5f);
                 Debug.Log("Pressed the right key, moving on!");
                 sequence_pointer += 1;
                 if (sequence_pointer >= current_sequence.Length)
@@ -244,10 +285,13 @@ public class sinus_glow : MonoBehaviour
                     sequence_pointer = 0;
                     current_sequence = null;
                     await_input = false;
+                    indicator_mat.SetColor("_EmissionColor", Color.white*0.5f);
+                    is_animating_win = true;
                 }
             }
             else
             {
+                indicator_mat.SetColor("_EmissionColor", Color.red*0.5f);
                 Debug.Log("Wrong key!");
             }
         }
