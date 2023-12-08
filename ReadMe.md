@@ -1,6 +1,8 @@
 # ExplorePy to Unity communication example using ZMQ
 This project implements a simple "Simon Says" game in which the player has to remember a sequence of 3 flashing cubes. The input to the game comes from a python server that publishes messages via ZMQ that are then handled by a subscribing thread in the Unity game.
 
+A python client script is also available to show how to receive messages coming from ZMQ in python (```receive_zmq_msgs.py```). Note that the main thread in this script is blocked until a message is received, effectively freezing it if no messages arrive - timeouts and/or ZMQ pollers should be considered to prevent this.
+
 ## Python server interfacing with explorepy
 The python server connects to an Explore device using the explorepy backend and sends a random string message (from "left", "right", "up", "down") via ZMQ when it receives an ExG packet from the device and the last message has been sent at least a second ago.
 

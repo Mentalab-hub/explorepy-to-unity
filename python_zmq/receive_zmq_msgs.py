@@ -4,7 +4,7 @@ import zmq
 def create_socket(port):
     context = zmq.Context()
     s = context.socket(zmq.SUB)
-    s.setsockopt_string(zmq.SUBSCRIBE, "")
+    s.setsockopt_string(zmq.SUBSCRIBE, "")  # subscribe to all topics
     s.connect(f'tcp://localhost:{port}')
     return s
 
